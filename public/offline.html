@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b4f8a">
+  <title>Sin conexion - Reportes de Servicio</title>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1.5rem;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #1f2933;
+      background: #eef2f6;
+      line-height: 1.5;
+    }
+
+    main {
+      width: 100%;
+      max-width: 26rem;
+      padding: 1.75rem;
+      text-align: center;
+      background: #ffffff;
+      border: 1px solid #e1e7ee;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgb(15 23 42 / 0.08);
+    }
+
+    .icono {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3.25rem;
+      height: 3.25rem;
+      margin-bottom: 1rem;
+      border-radius: 50%;
+      background: #e3eef8;
+      color: #0b4f8a;
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0 0 0.5rem;
+      font-size: 1.35rem;
+    }
+
+    p {
+      margin: 0 0 1.25rem;
+      color: #52606d;
+    }
+
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.6rem;
+      padding: 0.6rem 1.1rem;
+      font-weight: 600;
+      color: #ffffff;
+      text-decoration: none;
+      background: #0b4f8a;
+      border-radius: 8px;
+    }
+
+    a:hover {
+      background: #083b68;
+    }
+
+    a:focus-visible {
+      outline: 3px solid rgb(11 79 138 / 0.35);
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="icono" aria-hidden="true">!</span>
+    <h1>Sin conexion</h1>
+    <p>No hay conexion a internet en este momento. La pagina que intentas abrir no esta disponible sin red.</p>
+    <a href="/">Volver a intentar</a>
+  </main>
+</body>
+</html>

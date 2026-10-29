@@ -1,0 +1,25 @@
+{
+  "name": "Reportes de Servicio",
+  "short_name": "Reportes",
+  "lang": "es",
+  "description": "Registro y consulta de reportes de servicio tecnico",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eef2f6",
+  "theme_color": "#0b4f8a",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
