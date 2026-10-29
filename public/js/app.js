@@ -1,9 +1,13 @@
+import { esFechaCalendarioValida } from './fechas.js';
+
 const form = document.getElementById('reporte-form');
 const submitButton = document.getElementById('submit-button');
 const formStatus = document.getElementById('form-status');
 const listEl = document.getElementById('reportes-list');
 const listStatus = document.getElementById('list-status');
+const syncStatus = document.getElementById('sync-status');
 const refreshButton = document.getElementById('refresh-button');
+const syncButton = document.getElementById('sync-button');
 const connectionStatus = document.getElementById('connection-status');
 
 const ESTADOS = {
@@ -21,7 +25,12 @@ const MAX = {
 
 const CAMPOS = ['titulo', 'descripcion', 'cliente', 'sitio', 'fechaServicio', 'estado'];
 
-let clientIdPendiente = null;
+const DB_NAME = 'reportes-pwa';
+const DB_VERSION = 1;
+const STORE_REPORTES = 'reportes';
+
+let dbPromise = null;
+let sincronizando = false;
 
 function generarClientId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -29,6 +38,140 @@ function generarClientId() {
   }
   const aleatorio = Math.random().toString(16).slice(2);
   return `reporte-${Date.now()}-${aleatorio}`;
+}
+
+function abrirDB() {
+  if (dbPromise) {
+    return dbPromise;
+  }
+
+  dbPromise = new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) {
+      dbPromise = null;
+      reject(new Error('IndexedDB no disponible'));
+      return;
+    }
+
+    const solicitud = indexedDB.open(DB_NAME, DB_VERSION);
+
+    solicitud.onupgradeneeded = () => {
+      const db = solicitud.result;
+      if (!db.objectStoreNames.contains(STORE_REPORTES)) {
+        const store = db.createObjectStore(STORE_REPORTES, { keyPath: 'localId' });
+        store.createIndex('clientId', 'clientId', { unique: true });
+        store.createIndex('syncStatus', 'syncStatus', { unique: false });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+    };
+
+    solicitud.onsuccess = () => resolve(solicitud.result);
+    solicitud.onerror = () => {
+      dbPromise = null;
+      reject(solicitud.error || new Error('No se pudo abrir IndexedDB'));
+    };
+  });
+
+  return dbPromise;
+}
+
+async function guardarReporteLocal(registro) {
+  const db = await abrirDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_REPORTES, 'readwrite');
+    tx.objectStore(STORE_REPORTES).put(registro);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Transaccion abortada'));
+  });
+}
+
+async function obtenerReportesLocales() {
+  const db = await abrirDB();
+  const registros = await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_REPORTES, 'readonly');
+    const solicitud = tx.objectStore(STORE_REPORTES).getAll();
+    solicitud.onsuccess = () => resolve(solicitud.result || []);
+    solicitud.onerror = () => reject(solicitud.error);
+  });
+
+  return registros.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+async function obtenerReportePorClientId(clientId) {
+  const db = await abrirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_REPORTES, 'readonly');
+    const solicitud = tx.objectStore(STORE_REPORTES).index('clientId').get(clientId);
+    solicitud.onsuccess = () => resolve(solicitud.result || null);
+    solicitud.onerror = () => reject(solicitud.error);
+  });
+}
+
+async function actualizarReporteLocal(localId, cambios) {
+  const db = await abrirDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_REPORTES, 'readwrite');
+    const store = tx.objectStore(STORE_REPORTES);
+    const solicitud = store.get(localId);
+
+    solicitud.onsuccess = () => {
+      const actual = solicitud.result;
+      if (!actual) {
+        tx.abort();
+        reject(new Error('Reporte local no encontrado'));
+        return;
+      }
+      store.put({ ...actual, ...cambios });
+    };
+
+    solicitud.onerror = () => reject(solicitud.error);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Transaccion abortada'));
+  });
+}
+
+async function guardarReporteServidor(serverReport) {
+  if (!serverReport || !serverReport.clientId) {
+    return;
+  }
+
+  const ahora = new Date().toISOString();
+  const existente = await obtenerReportePorClientId(serverReport.clientId);
+
+  if (existente) {
+    await actualizarReporteLocal(existente.localId, {
+      titulo: serverReport.titulo || existente.titulo,
+      descripcion: serverReport.descripcion || '',
+      cliente: serverReport.cliente || '',
+      sitio: serverReport.sitio || '',
+      fechaServicio: serverReport.fechaServicio || '',
+      estado: serverReport.estado || existente.estado,
+      syncStatus: 'sincronizado',
+      serverId: serverReport.id,
+      syncedAt: existente.syncedAt || ahora,
+      syncError: null,
+      updatedAt: ahora,
+    });
+    return;
+  }
+
+  await guardarReporteLocal({
+    localId: generarClientId(),
+    clientId: serverReport.clientId,
+    titulo: serverReport.titulo || 'Reporte sin titulo',
+    descripcion: serverReport.descripcion || '',
+    cliente: serverReport.cliente || '',
+    sitio: serverReport.sitio || '',
+    fechaServicio: serverReport.fechaServicio || '',
+    estado: serverReport.estado || 'pendiente',
+    syncStatus: 'sincronizado',
+    createdAt: serverReport.createdAt || ahora,
+    updatedAt: ahora,
+    serverId: serverReport.id,
+    syncedAt: ahora,
+    syncError: null,
+  });
 }
 
 function mostrarError(campo, mensaje) {
@@ -83,7 +226,7 @@ function validarFormulario(datos) {
     errores.sitio = `El sitio no puede superar ${MAX.sitio} caracteres.`;
   }
 
-  if (datos.fechaServicio && !/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaServicio)) {
+  if (datos.fechaServicio && !esFechaCalendarioValida(datos.fechaServicio)) {
     errores.fechaServicio = 'Indica una fecha valida.';
   }
 
@@ -104,6 +247,11 @@ function validarFormulario(datos) {
 function mostrarEstadoFormulario(mensaje, tipo) {
   formStatus.textContent = mensaje;
   formStatus.className = `form-status form-status--${tipo}`;
+}
+
+function mostrarEstadoSincronizacion(mensaje, tipo) {
+  syncStatus.textContent = mensaje;
+  syncStatus.className = `sync-status sync-status--${tipo}`;
 }
 
 function establecerEnvioEnCurso(activo) {
@@ -145,6 +293,13 @@ function agregarDato(lista, etiqueta, valor) {
   lista.append(dt, dd);
 }
 
+function crearBadge(texto, clase) {
+  const badge = document.createElement('span');
+  badge.className = `badge ${clase}`;
+  badge.textContent = texto;
+  return badge;
+}
+
 function crearReporte(reporte) {
   const item = document.createElement('li');
   item.className = 'reporte';
@@ -156,14 +311,23 @@ function crearReporte(reporte) {
   titulo.className = 'reporte__titulo';
   titulo.textContent = reporte.titulo || 'Reporte sin titulo';
 
+  const badges = document.createElement('div');
+  badges.className = 'reporte__badges';
+
   const estadoClave = Object.prototype.hasOwnProperty.call(ESTADOS, reporte.estado)
     ? reporte.estado
     : 'desconocido';
-  const badge = document.createElement('span');
-  badge.className = `badge badge--${estadoClave}`;
-  badge.textContent = ESTADOS[reporte.estado] || 'Sin estado';
+  badges.appendChild(crearBadge(ESTADOS[reporte.estado] || 'Sin estado', `badge--${estadoClave}`));
 
-  encabezado.append(titulo, badge);
+  const syncStatusValor = reporte.syncStatus || 'sincronizado';
+  const syncInfo = {
+    pendiente: ['Pendiente de sincronizar', 'badge--sync-pendiente'],
+    sincronizado: ['Sincronizado', 'badge--sync-sincronizado'],
+    error: ['Error al sincronizar', 'badge--sync-error'],
+  }[syncStatusValor] || ['Sincronizado', 'badge--sync-sincronizado'];
+  badges.appendChild(crearBadge(syncInfo[0], syncInfo[1]));
+
+  encabezado.append(titulo, badges);
   item.appendChild(encabezado);
 
   if (reporte.descripcion) {
@@ -173,12 +337,20 @@ function crearReporte(reporte) {
     item.appendChild(descripcion);
   }
 
+  if (syncStatusValor === 'error' && reporte.syncError) {
+    const errorSync = document.createElement('p');
+    errorSync.className = 'reporte__sync-error';
+    errorSync.textContent = `No se pudo sincronizar: ${reporte.syncError}`;
+    item.appendChild(errorSync);
+  }
+
   const meta = document.createElement('dl');
   meta.className = 'reporte__meta';
   agregarDato(meta, 'Cliente', reporte.cliente);
   agregarDato(meta, 'Sitio', reporte.sitio);
   agregarDato(meta, 'Fecha del servicio', formatearFecha(reporte.fechaServicio));
   agregarDato(meta, 'Registrado', formatearFechaHora(reporte.createdAt));
+  agregarDato(meta, 'Sincronizado', formatearFechaHora(reporte.syncedAt));
 
   if (meta.children.length > 0) {
     item.appendChild(meta);
@@ -196,40 +368,202 @@ function renderizarReportes(reportes) {
   listEl.appendChild(fragmento);
 }
 
+async function cargarReportesLocal() {
+  const reportes = await obtenerReportesLocales();
+  renderizarReportes(reportes);
+  return reportes;
+}
+
+async function refrescarListaSegura() {
+  try {
+    const reportes = await cargarReportesLocal();
+    const pendientes = reportes.filter((r) => r.syncStatus !== 'sincronizado').length;
+    if (pendientes > 0) {
+      listStatus.className = 'list-status list-status--warn';
+      listStatus.textContent = `${reportes.length} reporte(s); ${pendientes} pendiente(s) de sincronizar.`;
+    } else {
+      listStatus.className = 'list-status';
+      listStatus.textContent = reportes.length === 0
+        ? 'Aun no hay reportes registrados.'
+        : `${reportes.length} reporte(s) sincronizados con el servidor.`;
+    }
+  } catch {
+    listStatus.className = 'list-status list-status--error';
+    listStatus.textContent = 'No se pudo actualizar la lista de reportes.';
+  }
+}
+
 async function cargarReportes() {
   listStatus.className = 'list-status';
   listStatus.textContent = 'Cargando reportes...';
   listEl.setAttribute('aria-busy', 'true');
   refreshButton.disabled = true;
 
+  let reportesLocales = [];
+
+  try {
+    reportesLocales = await cargarReportesLocal();
+  } catch {
+    listStatus.className = 'list-status list-status--error';
+    listStatus.textContent = 'No se pudo acceder al almacenamiento local del dispositivo.';
+    listEl.removeAttribute('aria-busy');
+    refreshButton.disabled = false;
+    return;
+  }
+
+  if (!navigator.onLine) {
+    listStatus.className = 'list-status list-status--warn';
+    listStatus.textContent = reportesLocales.length === 0
+      ? 'Sin conexion. No hay reportes guardados en el dispositivo.'
+      : `Sin conexion. Mostrando ${reportesLocales.length} reporte(s) guardado(s) en el dispositivo.`;
+    listEl.removeAttribute('aria-busy');
+    refreshButton.disabled = false;
+    return;
+  }
+
   try {
     const response = await fetch('/api/reportes');
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const mensaje = response.status === 503
-        ? 'El servidor no puede acceder a la base de datos.'
-        : data.error || 'No se pudieron cargar los reportes.';
-      throw new Error(mensaje);
+      throw new Error(data.error || `HTTP ${response.status}`);
     }
 
-    const reportes = Array.isArray(data.reportes) ? data.reportes : [];
-    renderizarReportes(reportes);
+    const reportesServidor = Array.isArray(data.reportes) ? data.reportes : [];
+    for (const reporte of reportesServidor) {
+      await guardarReporteServidor(reporte);
+    }
 
-    if (reportes.length === 0) {
+    const actualizados = await cargarReportesLocal();
+    const pendientes = actualizados.filter((r) => r.syncStatus !== 'sincronizado').length;
+
+    listStatus.className = 'list-status';
+    if (actualizados.length === 0) {
       listStatus.textContent = 'Aun no hay reportes registrados.';
+    } else if (pendientes > 0) {
+      listStatus.textContent = `${actualizados.length} reporte(s); ${pendientes} pendiente(s) de sincronizar.`;
     } else {
-      listStatus.textContent = `${reportes.length} reporte(s) encontrado(s).`;
+      listStatus.textContent = `${actualizados.length} reporte(s) sincronizados con el servidor.`;
     }
-  } catch (error) {
-    renderizarReportes([]);
-    listStatus.className = 'list-status list-status--error';
-    listStatus.textContent = error instanceof TypeError
-      ? 'No se pudo conectar con el servidor.'
-      : error.message;
+  } catch {
+    listStatus.className = 'list-status list-status--warn';
+    listStatus.textContent = 'No se pudo consultar el servidor. Mostrando reportes guardados en el dispositivo.';
   } finally {
     listEl.removeAttribute('aria-busy');
     refreshButton.disabled = false;
+  }
+}
+
+async function sincronizarReporte(registro) {
+  try {
+    const response = await fetch('/api/reportes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: registro.clientId,
+        titulo: registro.titulo,
+        descripcion: registro.descripcion,
+        cliente: registro.cliente,
+        sitio: registro.sitio,
+        fechaServicio: registro.fechaServicio,
+        estado: registro.estado,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+
+    const ahora = new Date().toISOString();
+    await actualizarReporteLocal(registro.localId, {
+      syncStatus: 'sincronizado',
+      serverId: typeof data.id === 'number' ? data.id : registro.serverId || null,
+      syncedAt: ahora,
+      syncError: null,
+      updatedAt: ahora,
+    });
+
+    return { ok: true, data };
+  } catch (error) {
+    const mensaje = error instanceof TypeError
+      ? 'Sin conexion con el servidor'
+      : error.message || 'Error de sincronizacion';
+
+    try {
+      await actualizarReporteLocal(registro.localId, {
+        syncStatus: 'error',
+        syncError: mensaje,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch {
+      return { ok: false, error };
+    }
+
+    return { ok: false, error };
+  }
+}
+
+async function sincronizarPendientes(opciones = {}) {
+  const silencioso = Boolean(opciones.silencioso);
+
+  if (sincronizando) {
+    return;
+  }
+
+  if (!navigator.onLine) {
+    if (!silencioso) {
+      mostrarEstadoSincronizacion('Sin conexion. Los reportes pendientes se conservan en el dispositivo.', 'warn');
+    }
+    return;
+  }
+
+  sincronizando = true;
+  syncButton.disabled = true;
+
+  if (!silencioso) {
+    mostrarEstadoSincronizacion('Sincronizando reportes pendientes...', 'info');
+  }
+
+  try {
+    const reportes = await obtenerReportesLocales();
+    const pendientes = reportes.filter((r) => r.syncStatus !== 'sincronizado');
+
+    if (pendientes.length === 0) {
+      if (!silencioso) {
+        mostrarEstadoSincronizacion('No hay reportes pendientes de sincronizar.', 'info');
+      }
+      return;
+    }
+
+    let exitos = 0;
+    let fallos = 0;
+
+    for (const reporte of pendientes) {
+      const resultado = await sincronizarReporte(reporte);
+      if (resultado.ok) {
+        exitos += 1;
+      } else {
+        fallos += 1;
+      }
+    }
+
+    await refrescarListaSegura();
+
+    if (fallos === 0) {
+      mostrarEstadoSincronizacion(`${exitos} reporte(s) sincronizado(s).`, 'success');
+    } else {
+      mostrarEstadoSincronizacion(
+        `${exitos} sincronizado(s); ${fallos} con error. Se reintentara mas adelante.`,
+        'error',
+      );
+    }
+  } catch {
+    mostrarEstadoSincronizacion('No se pudieron sincronizar los reportes. Se conservan en el dispositivo.', 'error');
+  } finally {
+    sincronizando = false;
+    syncButton.disabled = false;
   }
 }
 
@@ -247,65 +581,73 @@ async function guardarReporte(event) {
     return;
   }
 
-  if (!clientIdPendiente) {
-    clientIdPendiente = generarClientId();
-  }
-
-  const payload = {
-    clientId: clientIdPendiente,
+  const ahora = new Date().toISOString();
+  const registro = {
+    localId: generarClientId(),
+    clientId: generarClientId(),
     titulo: datos.titulo.trim(),
     descripcion: datos.descripcion.trim(),
     cliente: datos.cliente.trim(),
     sitio: datos.sitio.trim(),
     fechaServicio: datos.fechaServicio,
     estado: datos.estado,
+    syncStatus: 'pendiente',
+    createdAt: ahora,
+    updatedAt: ahora,
+    serverId: null,
+    syncedAt: null,
+    syncError: null,
   };
 
   establecerEnvioEnCurso(true);
-  mostrarEstadoFormulario('Guardando reporte...', 'info');
 
   try {
-    const response = await fetch('/api/reportes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    mostrarEstadoFormulario('Guardando en el dispositivo...', 'info');
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      const mensaje = response.status === 503
-        ? 'El servidor no puede acceder a la base de datos. El reporte no se guardo.'
-        : data.error || 'No se pudo guardar el reporte.';
-      throw new Error(mensaje);
+    try {
+      await guardarReporteLocal(registro);
+    } catch {
+      mostrarEstadoFormulario('No se pudo guardar el reporte en el dispositivo. Intenta de nuevo.', 'error');
+      return;
     }
-
-    const yaExistia = response.status === 200;
-    mostrarEstadoFormulario(
-      yaExistia
-        ? 'El reporte ya existia y se recupero sin duplicarlo.'
-        : 'Reporte guardado correctamente.',
-      'success',
-    );
 
     form.reset();
     limpiarErrores();
-    clientIdPendiente = null;
+    await refrescarListaSegura();
 
-    await cargarReportes();
-    formStatus.focus();
-  } catch (error) {
-    const mensaje = error instanceof TypeError
-      ? 'No se pudo conectar con el servidor. Revisa tu conexion e intenta de nuevo.'
-      : error.message;
-    mostrarEstadoFormulario(mensaje, 'error');
-    formStatus.focus();
+    if (!navigator.onLine) {
+      mostrarEstadoFormulario(
+        'Guardado en el dispositivo. Queda pendiente de sincronizar cuando vuelva la conexion.',
+        'success',
+      );
+      return;
+    }
+
+    mostrarEstadoFormulario('Guardado en el dispositivo. Sincronizando con el servidor...', 'info');
+    const resultado = await sincronizarReporte(registro);
+    await refrescarListaSegura();
+
+    if (resultado.ok) {
+      mostrarEstadoFormulario('Reporte guardado y sincronizado con el servidor.', 'success');
+    } else {
+      mostrarEstadoFormulario(
+        'Guardado en el dispositivo, pero no se pudo sincronizar. Se reintentara al recuperar la conexion.',
+        'error',
+      );
+    }
   } finally {
+    formStatus.focus();
     establecerEnvioEnCurso(false);
   }
 }
 
 async function comprobarServidor() {
+  if (!navigator.onLine) {
+    connectionStatus.className = 'connection-status connection-status--error';
+    connectionStatus.textContent = 'Sin conexion';
+    return;
+  }
+
   try {
     const response = await fetch('/api/health');
     const data = await response.json().catch(() => ({}));
@@ -327,6 +669,27 @@ async function comprobarServidor() {
   }
 }
 
+function registrarServiceWorker() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) {
+    return;
+  }
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('No se pudo registrar el service worker:', error);
+    });
+  });
+}
+
+async function iniciarApp() {
+  await comprobarServidor();
+  await cargarReportes();
+
+  if (navigator.onLine) {
+    await sincronizarPendientes({ silencioso: true });
+  }
+}
+
 form.addEventListener('submit', guardarReporte);
 
 form.addEventListener('input', (event) => {
@@ -342,19 +705,19 @@ form.addEventListener('change', (event) => {
 });
 
 refreshButton.addEventListener('click', cargarReportes);
+syncButton.addEventListener('click', () => sincronizarPendientes());
 
-function registrarServiceWorker() {
-  if (!('serviceWorker' in navigator) || !window.isSecureContext) {
-    return;
-  }
+window.addEventListener('online', async () => {
+  await comprobarServidor();
+  await sincronizarPendientes();
+  await cargarReportes();
+});
 
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
-      console.warn('No se pudo registrar el service worker:', error);
-    });
-  });
-}
+window.addEventListener('offline', () => {
+  comprobarServidor();
+  cargarReportes();
+  mostrarEstadoSincronizacion('Sin conexion. Los reportes pendientes se conservan en el dispositivo.', 'warn');
+});
 
 registrarServiceWorker();
-comprobarServidor();
-cargarReportes();
+iniciarApp();

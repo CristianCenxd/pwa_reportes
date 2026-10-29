@@ -1,17 +1,8 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
+import { validarReporte } from '../lib/validacion.js';
 
 const router = Router();
-
-const ESTADOS = new Set(['pendiente', 'en_proceso', 'completado']);
-const MAX = {
-  clientId: 100,
-  titulo: 200,
-  descripcion: 2000,
-  cliente: 200,
-  sitio: 200,
-  estado: 30,
-};
 
 const SELECT_REPORTE = `
   SELECT id, client_id, titulo, descripcion, cliente, sitio,
@@ -31,55 +22,6 @@ function toReporte(row) {
     estado: row.estado,
     createdAt: row.created_at,
   };
-}
-
-function esTextoValido(valor, max, requerido = false) {
-  if (valor === undefined || valor === null || valor === '') {
-    return !requerido;
-  }
-  if (typeof valor !== 'string') {
-    return false;
-  }
-  const limpio = valor.trim();
-  if (requerido && limpio.length === 0) {
-    return false;
-  }
-  return limpio.length <= max;
-}
-
-function validarReporte(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return 'Cuerpo invalido';
-  }
-  if (!esTextoValido(body.clientId, MAX.clientId, true)) {
-    return `clientId es obligatorio y debe tener hasta ${MAX.clientId} caracteres`;
-  }
-  if (!esTextoValido(body.titulo, MAX.titulo, true)) {
-    return `titulo es obligatorio y debe tener hasta ${MAX.titulo} caracteres`;
-  }
-  if (!esTextoValido(body.descripcion, MAX.descripcion)) {
-    return `descripcion debe tener hasta ${MAX.descripcion} caracteres`;
-  }
-  if (!esTextoValido(body.cliente, MAX.cliente)) {
-    return `cliente debe tener hasta ${MAX.cliente} caracteres`;
-  }
-  if (!esTextoValido(body.sitio, MAX.sitio)) {
-    return `sitio debe tener hasta ${MAX.sitio} caracteres`;
-  }
-  if (body.estado !== undefined && body.estado !== null && body.estado !== '') {
-    if (!esTextoValido(body.estado, MAX.estado, true) || !ESTADOS.has(body.estado)) {
-      return `estado debe ser uno de: ${[...ESTADOS].join(', ')}`;
-    }
-  }
-  if (body.fechaServicio !== undefined && body.fechaServicio !== null && body.fechaServicio !== '') {
-    if (typeof body.fechaServicio !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.fechaServicio)) {
-      return 'fechaServicio debe tener formato YYYY-MM-DD';
-    }
-    if (Number.isNaN(Date.parse(body.fechaServicio))) {
-      return 'fechaServicio no es una fecha valida';
-    }
-  }
-  return null;
 }
 
 function aNulo(valor) {

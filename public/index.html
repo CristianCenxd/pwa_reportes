@@ -7,6 +7,7 @@
   <meta name="description" content="Registro y consulta de reportes de servicio tecnico">
   <title>Reportes de Servicio Tecnico</title>
   <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <link rel="stylesheet" href="/css/styles.css">
 </head>
@@ -121,13 +122,19 @@
       <div class="panel__header panel__header--row">
         <div>
           <h2 id="list-title">Reportes registrados</h2>
-          <p>Consulta los reportes guardados en el servidor.</p>
+          <p>Consulta los reportes guardados en el dispositivo y en el servidor.</p>
         </div>
-        <button type="button" class="button button--ghost" id="refresh-button">
-          Actualizar
-        </button>
+        <div class="panel__actions">
+          <button type="button" class="button button--primary" id="sync-button">
+            Sincronizar pendientes
+          </button>
+          <button type="button" class="button button--ghost" id="refresh-button">
+            Actualizar
+          </button>
+        </div>
       </div>
 
+      <p class="sync-status" id="sync-status" role="status" aria-live="polite"></p>
       <p class="list-status" id="list-status" role="status" aria-live="polite"></p>
       <ul class="reportes" id="reportes-list"></ul>
     </section>

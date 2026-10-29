@@ -19,7 +19,25 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+*.tmp
+*.temp
+*.bak
+*.pid
 
-# Sistema
+# Artefactos de pruebas y cobertura
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+.cache/
+.eslintcache
+
+# Builds locales
+dist/
+build/
+
+# Sistema y editores
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/

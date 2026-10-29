@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'reportes-servicio-';
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const CACHE_NAME = `${CACHE_PREFIX}v4`;
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [
@@ -7,7 +7,9 @@ const PRECACHE_URLS = [
   '/index.html',
   '/offline.html',
   '/css/styles.css',
+  '/css/offline.css',
   '/js/app.js',
+  '/js/fechas.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -44,6 +46,14 @@ async function redPrimeroNavegacion(request) {
       return response;
     }
   } catch {
+  }
+
+  const url = new URL(request.url);
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    const appShell = await caches.match('/index.html');
+    if (appShell) {
+      return appShell;
+    }
   }
 
   const offline = await caches.match(OFFLINE_URL);
@@ -89,7 +99,15 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(request, { cache: 'no-store' }));
+    event.respondWith(
+      fetch(request, { cache: 'no-store' }).catch(() => new Response(
+        JSON.stringify({ error: 'Servidor no disponible' }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        },
+      )),
+    );
     return;
   }
 

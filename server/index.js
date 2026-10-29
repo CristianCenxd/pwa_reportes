@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pool } from './db.js';
 import reportesRouter from './routes/reportes.js';
 
@@ -12,7 +12,47 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, '..', 'public');
 
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "frame-src 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self'",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+].join('; ');
+
+const PERMISSIONS_POLICY = 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()';
+
+function cabecerasSeguridad(req, res, next) {
+  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
+  res.setHeader('X-XSS-Protection', '0');
+
+  const proto = req.headers['x-forwarded-proto'];
+  const protocoloHttps = typeof proto === 'string' && proto.split(',')[0].trim() === 'https';
+  if (req.secure || protocoloHttps) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+  }
+
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+
+  next();
+}
+
 app.disable('x-powered-by');
+app.use(cabecerasSeguridad);
 app.use(express.json({ limit: '16kb' }));
 
 function sanitizarMensaje(mensaje) {
@@ -68,6 +108,8 @@ app.use((err, req, res, next) => {
 
   let mensaje = 'Error interno';
   if (status === 400) mensaje = 'Solicitud invalida';
+  if (status === 413) mensaje = 'Solicitud demasiado grande';
+  if (status === 415) mensaje = 'Tipo de contenido no soportado';
   if (status === 503) mensaje = 'Base de datos no disponible';
 
   res.status(status).json({ error: mensaje });
@@ -77,6 +119,13 @@ if (!process.env.DATABASE_URL) {
   console.warn('Falta DATABASE_URL. Configura el archivo .env (ver .env.example).');
 }
 
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
-});
+const esModuloPrincipal = Boolean(process.argv[1])
+  && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+if (esModuloPrincipal) {
+  app.listen(PORT, () => {
+    console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  });
+}
+
+export { app };
