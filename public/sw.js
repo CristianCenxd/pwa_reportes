@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'reportes-servicio-';
-const CACHE_NAME = `${CACHE_PREFIX}v6`;
+const CACHE_NAME = `${CACHE_PREFIX}v7`;
 const OFFLINE_URL = '/offline.html';
 
 const PRECACHE_URLS = [

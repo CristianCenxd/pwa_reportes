@@ -96,8 +96,8 @@ app.post('/api/auth/client-login', async (req, res) => {
 
 app.get('/api/auth/me', async (req, res) => {
   const usuario = await usuarioDesdeSolicitud(req);
-  if (!usuario) return res.status(401).json({ error: 'Sesion no valida' });
-  const cliente = await clienteDesdeSolicitud(req);
+  const cliente = usuario ? null : await clienteDesdeSolicitud(req);
+  if (!usuario && !cliente) return res.status(401).json({ error: 'Sesion no valida' });
   res.json({ usuario: usuario || null, cliente: cliente || null });
 });
 

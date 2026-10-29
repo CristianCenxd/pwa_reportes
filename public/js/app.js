@@ -51,7 +51,7 @@ function codigoPropietario() {
 function headersApi(extra = {}) {
   const sesionActiva = sesionStaff || sesionCliente;
   return sesionActiva
-    ? { ...extra, Authorization: `Bearer ${sesionActiva.token}` }
+    ? { ...extra, Authorization: 'Bearer ' + sesionActiva.token }
     : { ...extra };
 }
 
@@ -766,6 +766,7 @@ async function iniciarSesionCliente(event) {
     sesionCliente = data;
     sesionStaff = null;
     localStorage.setItem('clientSession', JSON.stringify(data));
+    localStorage.removeItem('staffSession');
     aplicarAcceso();
     await iniciarApp();
   } catch (error) { status.textContent = error.message; }
@@ -803,7 +804,12 @@ async function iniciarApp() {
     sesionCliente = JSON.parse(localStorage.getItem('clientSession') || 'null');
     if ((sesionStaff?.token || sesionCliente?.token) && navigator.onLine) {
       const response = await fetch('/api/auth/me', { headers: headersApi() });
-      if (!response.ok) { sesionStaff = null; sesionCliente = null; }
+      if (!response.ok) {
+        sesionStaff = null;
+        sesionCliente = null;
+        localStorage.removeItem('staffSession');
+        localStorage.removeItem('clientSession');
+      }
     }
   } catch {
     sesionStaff = null;
