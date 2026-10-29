@@ -14,3 +14,4 @@ async function checkHealth() {
 }
 
 checkHealth();
+//Prueba de que funciona todo
