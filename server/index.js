@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pool } from './db.js';
 import reportesRouter from './routes/reportes.js';
+import { autenticar, inicializarEsquema, usuarioDesdeSolicitud } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,6 +80,20 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+app.post('/api/auth/login', async (req, res) => {
+  const resultado = await autenticar(req.body?.email, req.body?.password);
+  if (!resultado) {
+    return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+  }
+  res.json(resultado);
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  const usuario = await usuarioDesdeSolicitud(req);
+  if (!usuario) return res.status(401).json({ error: 'Sesion no valida' });
+  res.json({ usuario });
+});
+
 app.use('/api/reportes', reportesRouter);
 
 app.use(express.static(publicDir));
@@ -123,9 +138,17 @@ const esModuloPrincipal = Boolean(process.argv[1])
   && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
 if (esModuloPrincipal) {
-  app.listen(PORT, () => {
-    console.log(`Servidor escuchando en http://localhost:${PORT}`);
-  });
+  inicializarEsquema()
+    .catch((error) => {
+      console.error('No se pudo preparar la base de datos:', error.code || error.message);
+      process.exitCode = 1;
+    })
+    .then(() => {
+      if (process.exitCode) return;
+      app.listen(PORT, () => {
+        console.log(`Servidor escuchando en http://localhost:${PORT}`);
+      });
+    });
 }
 
 export { app };

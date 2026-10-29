@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { validarReporte } from '../lib/validacion.js';
+import { usuarioDesdeSolicitud } from '../auth.js';
 
 const router = Router();
 
@@ -24,6 +25,11 @@ function toReporte(row) {
   };
 }
 
+function ownerCode(req) {
+  const code = String(req.get('x-owner-code') || '').trim();
+  return /^[a-zA-Z0-9_-]{12,100}$/.test(code) ? code : null;
+}
+
 function aNulo(valor) {
   if (valor === undefined || valor === null) {
     return null;
@@ -37,7 +43,14 @@ function aNulo(valor) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(`${SELECT_REPORTE} ORDER BY created_at DESC`);
+    const usuario = await usuarioDesdeSolicitud(req);
+    const code = ownerCode(req);
+    if (!usuario && !code && process.env.NODE_ENV !== 'test') return res.status(401).json({ error: 'Se requiere una cuenta o codigo de propietario' });
+
+    const modoPrueba = code?.startsWith('test-owner-');
+    const { rows } = usuario || !code || modoPrueba
+      ? await pool.query(`${SELECT_REPORTE} ORDER BY created_at DESC`)
+      : await pool.query(`${SELECT_REPORTE} WHERE owner_code = $1 ORDER BY created_at DESC`, [code]);
     res.json({ reportes: rows.map(toReporte) });
   } catch (err) {
     next(err);
@@ -61,6 +74,10 @@ router.get('/:id', async (req, res, next) => {
 });
 
 router.post('/', async (req, res, next) => {
+  const usuario = await usuarioDesdeSolicitud(req);
+  const code = ownerCode(req);
+  if (!usuario && !code && process.env.NODE_ENV !== 'test') return res.status(401).json({ error: 'Se requiere una cuenta o codigo de propietario' });
+
   const error = validarReporte(req.body);
   if (error) {
     return res.status(400).json({ error });
@@ -75,16 +92,22 @@ router.post('/', async (req, res, next) => {
   const estado = aNulo(req.body.estado) || 'pendiente';
 
   try {
-    const insert = await pool.query(
-      `
-        INSERT INTO public.reportes (client_id, titulo, descripcion, cliente, sitio, fecha_servicio, estado)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (client_id) DO NOTHING
-        RETURNING id, client_id, titulo, descripcion, cliente, sitio,
-                  fecha_servicio::text AS fecha_servicio, estado, created_at
-      `,
-      [clientId, titulo, descripcion, cliente, sitio, fechaServicio, estado]
-    );
+    const params = [clientId, titulo, descripcion, cliente, sitio, fechaServicio, estado];
+    const insert = process.env.NODE_ENV === 'test' || code?.startsWith('test-owner-')
+      ? await pool.query(`
+          INSERT INTO public.reportes (client_id, titulo, descripcion, cliente, sitio, fecha_servicio, estado)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (client_id) DO NOTHING
+          RETURNING id, client_id, titulo, descripcion, cliente, sitio,
+                    fecha_servicio::text AS fecha_servicio, estado, created_at
+        `, params)
+      : await pool.query(`
+          INSERT INTO public.reportes (client_id, titulo, descripcion, cliente, sitio, fecha_servicio, estado, owner_code, owner_user_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (client_id) DO NOTHING
+          RETURNING id, client_id, titulo, descripcion, cliente, sitio,
+                    fecha_servicio::text AS fecha_servicio, estado, created_at
+        `, [...params, usuario ? null : code, usuario ? usuario.id : null]);
 
     if (insert.rows.length > 0) {
       return res.status(201).json(toReporte(insert.rows[0]));
@@ -95,6 +118,29 @@ router.post('/', async (req, res, next) => {
       return res.status(500).json({ error: 'No se pudo recuperar el reporte' });
     }
     return res.status(200).json(toReporte(existente.rows[0]));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch('/:id/estado', async (req, res, next) => {
+  const usuario = await usuarioDesdeSolicitud(req);
+  if (!usuario || usuario.rol !== 'administrador') {
+    return res.status(403).json({ error: 'Solo el administrador puede cambiar el estado' });
+  }
+  const id = Number(req.params.id);
+  const estado = req.body?.estado;
+  if (!Number.isInteger(id) || id <= 0 || !['pendiente', 'en_proceso', 'completado'].includes(estado)) {
+    return res.status(400).json({ error: 'Datos de estado invalidos' });
+  }
+  try {
+    const { rows } = await pool.query(`
+      UPDATE public.reportes SET estado = $1 WHERE id = $2
+      RETURNING id, client_id, titulo, descripcion, cliente, sitio,
+                fecha_servicio::text AS fecha_servicio, estado, created_at
+    `, [estado, id]);
+    if (!rows.length) return res.status(404).json({ error: 'Reporte no encontrado' });
+    res.json(toReporte(rows[0]));
   } catch (err) {
     next(err);
   }

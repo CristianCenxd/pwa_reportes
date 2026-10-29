@@ -1,4 +1,4 @@
-import { esFechaCalendarioValida } from './fechas.js';
+import { esFechaCalendarioValida, fechaHoyLocal } from './fechas.js';
 
 const form = document.getElementById('reporte-form');
 const submitButton = document.getElementById('submit-button');
@@ -7,8 +7,11 @@ const listEl = document.getElementById('reportes-list');
 const listStatus = document.getElementById('list-status');
 const syncStatus = document.getElementById('sync-status');
 const refreshButton = document.getElementById('refresh-button');
-const syncButton = document.getElementById('sync-button');
 const connectionStatus = document.getElementById('connection-status');
+const fechaServicioInput = document.getElementById('fechaServicio');
+if (fechaServicioInput) {
+  fechaServicioInput.min = fechaHoyLocal();
+}
 
 const ESTADOS = {
   pendiente: 'Pendiente',
@@ -31,6 +34,22 @@ const STORE_REPORTES = 'reportes';
 
 let dbPromise = null;
 let sincronizando = false;
+let sesionStaff = null;
+
+function codigoPropietario() {
+  let codigo = localStorage.getItem('ownerCode');
+  if (!codigo || !/^[a-zA-Z0-9_-]{12,100}$/.test(codigo)) {
+    codigo = generarClientId().replace(/-/g, '').slice(0, 32);
+    localStorage.setItem('ownerCode', codigo);
+  }
+  return codigo;
+}
+
+function headersApi(extra = {}) {
+  return sesionStaff
+    ? { ...extra, Authorization: `Bearer ${sesionStaff.token}` }
+    : { ...extra, 'X-Owner-Code': codigoPropietario() };
+}
 
 function generarClientId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -94,7 +113,10 @@ async function obtenerReportesLocales() {
     solicitud.onerror = () => reject(solicitud.error);
   });
 
-  return registros.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const filtrados = sesionStaff
+    ? registros
+    : registros.filter((registro) => registro.ownerCode === codigoPropietario());
+  return filtrados.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
 async function obtenerReportePorClientId(clientId) {
@@ -147,6 +169,7 @@ async function guardarReporteServidor(serverReport) {
       sitio: serverReport.sitio || '',
       fechaServicio: serverReport.fechaServicio || '',
       estado: serverReport.estado || existente.estado,
+      ownerCode: sesionStaff ? null : codigoPropietario(),
       syncStatus: 'sincronizado',
       serverId: serverReport.id,
       syncedAt: existente.syncedAt || ahora,
@@ -165,6 +188,7 @@ async function guardarReporteServidor(serverReport) {
     sitio: serverReport.sitio || '',
     fechaServicio: serverReport.fechaServicio || '',
     estado: serverReport.estado || 'pendiente',
+    ownerCode: sesionStaff ? null : codigoPropietario(),
     syncStatus: 'sincronizado',
     createdAt: serverReport.createdAt || ahora,
     updatedAt: ahora,
@@ -214,20 +238,30 @@ function validarFormulario(datos) {
     errores.titulo = `El titulo no puede superar ${MAX.titulo} caracteres.`;
   }
 
-  if (datos.descripcion.trim().length > MAX.descripcion) {
+  if (!datos.descripcion.trim()) {
+    errores.descripcion = 'La descripcion es obligatoria.';
+  } else if (datos.descripcion.trim().length > MAX.descripcion) {
     errores.descripcion = `La descripcion no puede superar ${MAX.descripcion} caracteres.`;
   }
 
-  if (datos.cliente.trim().length > MAX.cliente) {
+  if (!datos.cliente.trim()) {
+    errores.cliente = 'El cliente es obligatorio.';
+  } else if (datos.cliente.trim().length > MAX.cliente) {
     errores.cliente = `El cliente no puede superar ${MAX.cliente} caracteres.`;
   }
 
-  if (datos.sitio.trim().length > MAX.sitio) {
+  if (!datos.sitio.trim()) {
+    errores.sitio = 'El sitio es obligatorio.';
+  } else if (datos.sitio.trim().length > MAX.sitio) {
     errores.sitio = `El sitio no puede superar ${MAX.sitio} caracteres.`;
   }
 
-  if (datos.fechaServicio && !esFechaCalendarioValida(datos.fechaServicio)) {
+  if (!datos.fechaServicio) {
+    errores.fechaServicio = 'La fecha del servicio es obligatoria.';
+  } else if (!esFechaCalendarioValida(datos.fechaServicio)) {
     errores.fechaServicio = 'Indica una fecha valida.';
+  } else if (datos.fechaServicio < fechaHoyLocal()) {
+    errores.fechaServicio = 'No puedes elegir una fecha pasada.';
   }
 
   if (!ESTADOS[datos.estado]) {
@@ -344,6 +378,27 @@ function crearReporte(reporte) {
     item.appendChild(errorSync);
   }
 
+  if (sesionStaff?.usuario?.rol === 'administrador') {
+    const selector = document.createElement('select');
+    selector.setAttribute('aria-label', 'Cambiar estado del reporte');
+    for (const [valor, texto] of Object.entries(ESTADOS)) {
+      const option = document.createElement('option');
+      option.value = valor;
+      option.textContent = texto;
+      option.selected = valor === reporte.estado;
+      selector.appendChild(option);
+    }
+    selector.addEventListener('change', async () => {
+      await fetch(`/api/reportes/${reporte.serverId || reporte.id}/estado`, {
+        method: 'PATCH',
+        headers: headersApi({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ estado: selector.value }),
+      });
+      await cargarReportes();
+    });
+    item.appendChild(selector);
+  }
+
   const meta = document.createElement('dl');
   meta.className = 'reporte__meta';
   agregarDato(meta, 'Cliente', reporte.cliente);
@@ -422,7 +477,7 @@ async function cargarReportes() {
   }
 
   try {
-    const response = await fetch('/api/reportes');
+    const response = await fetch('/api/reportes', { headers: headersApi() });
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -458,7 +513,7 @@ async function sincronizarReporte(registro) {
   try {
     const response = await fetch('/api/reportes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headersApi({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         clientId: registro.clientId,
         titulo: registro.titulo,
@@ -520,7 +575,6 @@ async function sincronizarPendientes(opciones = {}) {
   }
 
   sincronizando = true;
-  syncButton.disabled = true;
 
   if (!silencioso) {
     mostrarEstadoSincronizacion('Sincronizando reportes pendientes...', 'info');
@@ -563,7 +617,6 @@ async function sincronizarPendientes(opciones = {}) {
     mostrarEstadoSincronizacion('No se pudieron sincronizar los reportes. Se conservan en el dispositivo.', 'error');
   } finally {
     sincronizando = false;
-    syncButton.disabled = false;
   }
 }
 
@@ -591,6 +644,7 @@ async function guardarReporte(event) {
     sitio: datos.sitio.trim(),
     fechaServicio: datos.fechaServicio,
     estado: datos.estado,
+    ownerCode: sesionStaff ? null : codigoPropietario(),
     syncStatus: 'pendiente',
     createdAt: ahora,
     updatedAt: ahora,
@@ -681,7 +735,39 @@ function registrarServiceWorker() {
   });
 }
 
+async function iniciarSesionStaff(event) {
+  event.preventDefault();
+  const status = document.getElementById('staff-status');
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('staff-email').value,
+        password: document.getElementById('staff-password').value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesion');
+    sesionStaff = data;
+    localStorage.setItem('staffSession', JSON.stringify(data));
+    status.textContent = `Sesion iniciada como ${data.usuario.rol}.`;
+    await cargarReportes();
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
 async function iniciarApp() {
+  try {
+    sesionStaff = JSON.parse(localStorage.getItem('staffSession') || 'null');
+    if (sesionStaff?.token) {
+      const response = await fetch('/api/auth/me', { headers: headersApi() });
+      if (!response.ok) sesionStaff = null;
+    }
+  } catch {
+    sesionStaff = null;
+  }
   await comprobarServidor();
   await cargarReportes();
 
@@ -691,6 +777,7 @@ async function iniciarApp() {
 }
 
 form.addEventListener('submit', guardarReporte);
+document.getElementById('staff-login-form').addEventListener('submit', iniciarSesionStaff);
 
 form.addEventListener('input', (event) => {
   if (CAMPOS.includes(event.target.id)) {
@@ -705,7 +792,6 @@ form.addEventListener('change', (event) => {
 });
 
 refreshButton.addEventListener('click', cargarReportes);
-syncButton.addEventListener('click', () => sincronizarPendientes());
 
 window.addEventListener('online', async () => {
   await comprobarServidor();

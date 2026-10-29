@@ -27,7 +27,11 @@ after(async () => {
 });
 
 async function request(path, options = {}) {
-  const res = await fetch(`${baseUrl}${path}`, options);
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Authorization') && !headers.has('X-Owner-Code')) {
+    headers.set('X-Owner-Code', `test-owner-${Date.now()}`);
+  }
+  const res = await fetch(`${baseUrl}${path}`, { ...options, headers });
   const text = await res.text();
   let json = null;
   try {
@@ -107,7 +111,7 @@ test('sirve manifest, service worker, fechas y CSS offline con MIME correcto', a
   const sw = await request('/sw.js');
   assert.equal(sw.res.status, 200);
   assert.match(sw.res.headers.get('content-type') || '', /javascript/);
-  assert.match(sw.text, /\$\{CACHE_PREFIX\}v4/);
+  assert.match(sw.text, /\$\{CACHE_PREFIX\}v5/);
   assert.match(sw.text, /'\/js\/fechas\.js'/);
   assert.match(sw.text, /'\/css\/offline\.css'/);
 
@@ -153,9 +157,9 @@ test('rechaza JSON invalido, cuerpo grande y cuerpos no objeto sin filtrar detal
 
 test('rechaza campos invalidos y fechas imposibles sin escribir en la base', async () => {
   const prefijo = `test-api-${Date.now()}`;
-  const base = { clientId: `${prefijo}-base`, titulo: 'Prueba', fechaServicio: '2026-02-28' };
+  const base = { clientId: `${prefijo}-base`, titulo: 'Prueba', descripcion: 'Descripcion', cliente: 'Cliente', sitio: 'Sitio', fechaServicio: '2099-02-28' };
   const casos = [
-    [{ titulo: 'x', fechaServicio: '2026-02-28' }, /clientId/],
+    [{ titulo: 'x', descripcion: 'Descripcion', cliente: 'Cliente', sitio: 'Sitio', fechaServicio: '2099-02-28' }, /clientId/],
     [{ clientId: `${prefijo}-sin-titulo`, fechaServicio: '2026-02-28' }, /titulo/],
     [{ ...base, clientId: '   ' }, /clientId/],
     [{ ...base, titulo: '   ' }, /titulo/],

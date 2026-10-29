@@ -5,6 +5,10 @@ import { MAX, validarReporte } from '../server/lib/validacion.js';
 const base = {
   clientId: 'cliente-prueba',
   titulo: 'Reporte de prueba',
+  descripcion: 'Descripcion obligatoria',
+  cliente: 'Cliente obligatorio',
+  sitio: 'Sitio obligatorio',
+  fechaServicio: '2099-01-01',
 };
 
 test('acepta un reporte minimo y uno completo', () => {
@@ -14,7 +18,7 @@ test('acepta un reporte minimo y uno completo', () => {
     descripcion: 'Descripcion',
     cliente: 'Cliente',
     sitio: 'Sitio',
-    fechaServicio: '2024-02-29',
+    fechaServicio: '2099-02-28',
     estado: 'en_proceso',
   }), null);
 });
@@ -59,16 +63,16 @@ test('rechaza fechas imposibles y formatos invalidos', () => {
     );
   }
   for (const fecha of ['2026-2-28', '2026-02-28T00:00:00', 20260228]) {
-    assert.equal(
+    assert.match(
       validarReporte({ ...base, fechaServicio: fecha }),
-      'fechaServicio debe tener formato YYYY-MM-DD',
+      /fechaServicio.*formato YYYY-MM-DD/,
       String(fecha),
     );
   }
 });
 
-test('acepta fecha bisiesta real y fecha opcional vacia', () => {
-  assert.equal(validarReporte({ ...base, fechaServicio: '2024-02-29' }), null);
-  assert.equal(validarReporte({ ...base, fechaServicio: '' }), null);
-  assert.equal(validarReporte({ ...base, fechaServicio: null }), null);
+test('acepta fecha bisiesta real y rechaza fecha vacia o nula', () => {
+  assert.equal(validarReporte({ ...base, fechaServicio: '2096-02-29' }), null);
+  assert.match(validarReporte({ ...base, fechaServicio: '' }), /fechaServicio es obligatoria/);
+  assert.match(validarReporte({ ...base, fechaServicio: null }), /fechaServicio es obligatoria/);
 });

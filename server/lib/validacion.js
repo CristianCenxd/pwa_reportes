@@ -1,4 +1,4 @@
-import { esFechaCalendarioValida, tieneFormatoFecha } from '../../public/js/fechas.js';
+import { esFechaCalendarioValida, fechaHoyLocal, tieneFormatoFecha } from '../../public/js/fechas.js';
 
 export const ESTADOS = new Set(['pendiente', 'en_proceso', 'completado']);
 
@@ -35,27 +35,28 @@ export function validarReporte(body) {
   if (!esTextoValido(body.titulo, MAX.titulo, true)) {
     return `titulo es obligatorio y debe tener hasta ${MAX.titulo} caracteres`;
   }
-  if (!esTextoValido(body.descripcion, MAX.descripcion)) {
-    return `descripcion debe tener hasta ${MAX.descripcion} caracteres`;
+  if (!esTextoValido(body.descripcion, MAX.descripcion, true)) {
+    return `descripcion es obligatoria y debe tener hasta ${MAX.descripcion} caracteres`;
   }
-  if (!esTextoValido(body.cliente, MAX.cliente)) {
-    return `cliente debe tener hasta ${MAX.cliente} caracteres`;
+  if (!esTextoValido(body.cliente, MAX.cliente, true)) {
+    return `cliente es obligatorio y debe tener hasta ${MAX.cliente} caracteres`;
   }
-  if (!esTextoValido(body.sitio, MAX.sitio)) {
-    return `sitio debe tener hasta ${MAX.sitio} caracteres`;
+  if (!esTextoValido(body.sitio, MAX.sitio, true)) {
+    return `sitio es obligatorio y debe tener hasta ${MAX.sitio} caracteres`;
   }
   if (body.estado !== undefined && body.estado !== null && body.estado !== '') {
     if (!esTextoValido(body.estado, MAX.estado, true) || !ESTADOS.has(body.estado)) {
       return `estado debe ser uno de: ${[...ESTADOS].join(', ')}`;
     }
   }
-  if (body.fechaServicio !== undefined && body.fechaServicio !== null && body.fechaServicio !== '') {
-    if (!tieneFormatoFecha(body.fechaServicio)) {
-      return 'fechaServicio debe tener formato YYYY-MM-DD';
-    }
-    if (!esFechaCalendarioValida(body.fechaServicio)) {
-      return 'fechaServicio no es una fecha valida';
-    }
+  if (!tieneFormatoFecha(body.fechaServicio)) {
+    return 'fechaServicio es obligatoria y debe tener formato YYYY-MM-DD';
+  }
+  if (!esFechaCalendarioValida(body.fechaServicio)) {
+    return 'fechaServicio no es una fecha valida';
+  }
+  if (body.fechaServicio < fechaHoyLocal()) {
+    return 'fechaServicio no puede ser una fecha pasada';
   }
   return null;
 }

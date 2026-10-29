@@ -59,14 +59,14 @@ test('offline.html usa CSS externo y no estilos inline', async () => {
   assert.match(html, /Sin conexion/);
 });
 
-test('service worker implementa install/activate/fetch, precache v4 y red solo para API', async () => {
+test('service worker implementa install/activate/fetch, precache v5 y red solo para API', async () => {
   const sw = await leer('public/sw.js');
   assert.match(sw, /addEventListener\('install'/);
   assert.match(sw, /addEventListener\('activate'/);
   assert.match(sw, /addEventListener\('fetch'/);
   assert.match(sw, /skipWaiting\(\)/);
   assert.match(sw, /clients\.claim\(\)/);
-  assert.match(sw, /\$\{CACHE_PREFIX\}v4/);
+  assert.match(sw, /\$\{CACHE_PREFIX\}v5/);
   assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /cache\.addAll\(PRECACHE_URLS\)/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
@@ -89,7 +89,7 @@ test('service worker implementa install/activate/fetch, precache v4 y red solo p
   }
 });
 
-test('app.js conserva IndexedDB, offline-first, sync manual/automatica y validacion compartida', async () => {
+test('app.js conserva IndexedDB, offline-first, sync automatica y validacion compartida', async () => {
   const app = await leer('public/js/app.js');
   assert.match(app, /from '\.\/fechas\.js'/);
   assert.match(app, /indexedDB\.open\(DB_NAME, DB_VERSION\)/);
@@ -97,7 +97,6 @@ test('app.js conserva IndexedDB, offline-first, sync manual/automatica y validac
   assert.match(app, /createIndex\('clientId', 'clientId', \{ unique: true \}\)/);
   assert.match(app, /guardarReporteLocal\(registro\)/);
   assert.match(app, /navigator\.onLine/);
-  assert.match(app, /syncButton\.addEventListener\('click'/);
   assert.match(app, /window\.addEventListener\('online'/);
   assert.match(app, /window\.addEventListener\('offline'/);
   assert.match(app, /sincronizarPendientes/);
