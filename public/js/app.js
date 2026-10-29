@@ -35,6 +35,9 @@ const STORE_REPORTES = 'reportes';
 let dbPromise = null;
 let sincronizando = false;
 let sesionStaff = null;
+let sesionCliente = null;
+let paginaActual = 1;
+const TAMANO_PAGINA = 5;
 
 function codigoPropietario() {
   let codigo = localStorage.getItem('ownerCode');
@@ -46,9 +49,10 @@ function codigoPropietario() {
 }
 
 function headersApi(extra = {}) {
-  return sesionStaff
-    ? { ...extra, Authorization: `Bearer ${sesionStaff.token}` }
-    : { ...extra, 'X-Owner-Code': codigoPropietario() };
+  const sesionActiva = sesionStaff || sesionCliente;
+  return sesionActiva
+    ? { ...extra, Authorization: `Bearer ${sesionActiva.token}` }
+    : { ...extra };
 }
 
 function generarClientId() {
@@ -416,11 +420,17 @@ function crearReporte(reporte) {
 
 function renderizarReportes(reportes) {
   listEl.textContent = '';
+  const totalPaginas = Math.max(1, Math.ceil(reportes.length / TAMANO_PAGINA));
+  paginaActual = Math.min(paginaActual, totalPaginas);
+  const inicio = (paginaActual - 1) * TAMANO_PAGINA;
   const fragmento = document.createDocumentFragment();
-  reportes.forEach((reporte) => {
+  reportes.slice(inicio, inicio + TAMANO_PAGINA).forEach((reporte) => {
     fragmento.appendChild(crearReporte(reporte));
   });
   listEl.appendChild(fragmento);
+  document.getElementById('pagination-info').textContent = `Pagina ${paginaActual} de ${totalPaginas}`;
+  document.getElementById('pagination-prev').disabled = paginaActual <= 1;
+  document.getElementById('pagination-next').disabled = paginaActual >= totalPaginas;
 }
 
 async function cargarReportesLocal() {
@@ -735,6 +745,32 @@ function registrarServiceWorker() {
   });
 }
 
+function aplicarAcceso() {
+  const autenticado = Boolean(sesionStaff || sesionCliente);
+  document.getElementById('access-panel').hidden = autenticado;
+  document.querySelectorAll('.authenticated-only').forEach((elemento) => {
+    elemento.hidden = !autenticado;
+  });
+}
+
+async function iniciarSesionCliente(event) {
+  event.preventDefault();
+  const status = document.getElementById('client-status');
+  try {
+    const response = await fetch('/api/auth/client-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo: document.getElementById('client-code').value }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesion');
+    sesionCliente = data;
+    sesionStaff = null;
+    localStorage.setItem('clientSession', JSON.stringify(data));
+    aplicarAcceso();
+    await iniciarApp();
+  } catch (error) { status.textContent = error.message; }
+}
+
 async function iniciarSesionStaff(event) {
   event.preventDefault();
   const status = document.getElementById('staff-status');
@@ -750,9 +786,12 @@ async function iniciarSesionStaff(event) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo iniciar sesion');
     sesionStaff = data;
+    sesionCliente = null;
     localStorage.setItem('staffSession', JSON.stringify(data));
+    localStorage.removeItem('clientSession');
     status.textContent = `Sesion iniciada como ${data.usuario.rol}.`;
-    await cargarReportes();
+    aplicarAcceso();
+    await iniciarApp();
   } catch (error) {
     status.textContent = error.message;
   }
@@ -761,13 +800,17 @@ async function iniciarSesionStaff(event) {
 async function iniciarApp() {
   try {
     sesionStaff = JSON.parse(localStorage.getItem('staffSession') || 'null');
-    if (sesionStaff?.token) {
+    sesionCliente = JSON.parse(localStorage.getItem('clientSession') || 'null');
+    if ((sesionStaff?.token || sesionCliente?.token) && navigator.onLine) {
       const response = await fetch('/api/auth/me', { headers: headersApi() });
-      if (!response.ok) sesionStaff = null;
+      if (!response.ok) { sesionStaff = null; sesionCliente = null; }
     }
   } catch {
     sesionStaff = null;
+    sesionCliente = null;
   }
+  aplicarAcceso();
+  if (!sesionStaff && !sesionCliente) return;
   await comprobarServidor();
   await cargarReportes();
 
@@ -778,6 +821,9 @@ async function iniciarApp() {
 
 form.addEventListener('submit', guardarReporte);
 document.getElementById('staff-login-form').addEventListener('submit', iniciarSesionStaff);
+document.getElementById('client-login-form').addEventListener('submit', iniciarSesionCliente);
+document.getElementById('pagination-prev').addEventListener('click', () => { paginaActual -= 1; cargarReportes(); });
+document.getElementById('pagination-next').addEventListener('click', () => { paginaActual += 1; cargarReportes(); });
 
 form.addEventListener('input', (event) => {
   if (CAMPOS.includes(event.target.id)) {

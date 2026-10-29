@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pool } from './db.js';
 import reportesRouter from './routes/reportes.js';
-import { autenticar, inicializarEsquema, usuarioDesdeSolicitud } from './auth.js';
+import { autenticar, autenticarCliente, clienteDesdeSolicitud, inicializarEsquema, usuarioDesdeSolicitud } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,10 +88,31 @@ app.post('/api/auth/login', async (req, res) => {
   res.json(resultado);
 });
 
+app.post('/api/auth/client-login', async (req, res) => {
+  const resultado = await autenticarCliente(req.body?.codigo);
+  if (!resultado) return res.status(401).json({ error: 'Codigo de cliente invalido o inactivo' });
+  res.json(resultado);
+});
+
 app.get('/api/auth/me', async (req, res) => {
   const usuario = await usuarioDesdeSolicitud(req);
   if (!usuario) return res.status(401).json({ error: 'Sesion no valida' });
-  res.json({ usuario });
+  const cliente = await clienteDesdeSolicitud(req);
+  res.json({ usuario: usuario || null, cliente: cliente || null });
+});
+
+app.post('/api/clientes', async (req, res, next) => {
+  try {
+    const usuario = await usuarioDesdeSolicitud(req);
+    if (!usuario || usuario.rol !== 'administrador') return res.status(403).json({ error: 'Solo el administrador puede crear clientes' });
+    const nombre = String(req.body?.nombre || '').trim();
+    const codigo = String(req.body?.codigo || '').trim();
+    if (!nombre || !/^Cliente-[A-Za-z0-9]{8,}$/.test(codigo)) {
+      return res.status(400).json({ error: 'Nombre y codigo valido son obligatorios' });
+    }
+    await pool.query('INSERT INTO public.pwa_clientes (codigo, nombre) VALUES ($1, $2)', [codigo, nombre]);
+    res.status(201).json({ codigo, nombre });
+  } catch (err) { next(err); }
 });
 
 app.use('/api/reportes', reportesRouter);

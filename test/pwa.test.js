@@ -59,14 +59,14 @@ test('offline.html usa CSS externo y no estilos inline', async () => {
   assert.match(html, /Sin conexion/);
 });
 
-test('service worker implementa install/activate/fetch, precache v5 y red solo para API', async () => {
+test('service worker implementa install/activate/fetch, precache v6 y red solo para API', async () => {
   const sw = await leer('public/sw.js');
   assert.match(sw, /addEventListener\('install'/);
   assert.match(sw, /addEventListener\('activate'/);
   assert.match(sw, /addEventListener\('fetch'/);
   assert.match(sw, /skipWaiting\(\)/);
   assert.match(sw, /clients\.claim\(\)/);
-  assert.match(sw, /\$\{CACHE_PREFIX\}v5/);
+  assert.match(sw, /\$\{CACHE_PREFIX\}v6/);
   assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /cache\.addAll\(PRECACHE_URLS\)/);
   assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);

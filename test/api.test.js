@@ -111,7 +111,7 @@ test('sirve manifest, service worker, fechas y CSS offline con MIME correcto', a
   const sw = await request('/sw.js');
   assert.equal(sw.res.status, 200);
   assert.match(sw.res.headers.get('content-type') || '', /javascript/);
-  assert.match(sw.text, /\$\{CACHE_PREFIX\}v5/);
+  assert.match(sw.text, /\$\{CACHE_PREFIX\}v6/);
   assert.match(sw.text, /'\/js\/fechas\.js'/);
   assert.match(sw.text, /'\/css\/offline\.css'/);
 

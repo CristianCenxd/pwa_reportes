@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { validarReporte } from '../lib/validacion.js';
-import { usuarioDesdeSolicitud } from '../auth.js';
+import { clienteDesdeSolicitud, usuarioDesdeSolicitud } from '../auth.js';
 
 const router = Router();
 
@@ -44,8 +44,10 @@ function aNulo(valor) {
 router.get('/', async (req, res, next) => {
   try {
     const usuario = await usuarioDesdeSolicitud(req);
-    const code = ownerCode(req);
-    if (!usuario && !code && process.env.NODE_ENV !== 'test') return res.status(401).json({ error: 'Se requiere una cuenta o codigo de propietario' });
+    const cliente = await clienteDesdeSolicitud(req);
+    const headerCode = ownerCode(req);
+    const code = cliente?.codigo || (headerCode?.startsWith('test-owner-') ? headerCode : null);
+    if (!usuario && !cliente && !code) return res.status(401).json({ error: 'Inicia sesion como administrador o cliente' });
 
     const modoPrueba = code?.startsWith('test-owner-');
     const { rows } = usuario || !code || modoPrueba
@@ -75,8 +77,10 @@ router.get('/:id', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   const usuario = await usuarioDesdeSolicitud(req);
-  const code = ownerCode(req);
-  if (!usuario && !code && process.env.NODE_ENV !== 'test') return res.status(401).json({ error: 'Se requiere una cuenta o codigo de propietario' });
+  const clienteAutenticado = await clienteDesdeSolicitud(req);
+  const headerCode = ownerCode(req);
+  const code = clienteAutenticado?.codigo || (headerCode?.startsWith('test-owner-') ? headerCode : null);
+  if (!usuario && !clienteAutenticado && !code && process.env.NODE_ENV !== 'test') return res.status(401).json({ error: 'Inicia sesion como administrador o cliente' });
 
   const error = validarReporte(req.body);
   if (error) {

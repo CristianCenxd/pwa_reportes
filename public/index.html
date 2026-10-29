@@ -27,16 +27,25 @@
   </header>
 
   <main id="contenido" class="app-main">
-    <section class="panel" id="staff-panel">
-      <div class="panel__header"><h2>Acceso del equipo TI</h2></div>
-      <form id="staff-login-form" class="field-grid">
-        <div class="field"><label for="staff-email">Correo</label><input id="staff-email" type="email" autocomplete="username" required></div>
-        <div class="field"><label for="staff-password">Contraseña</label><input id="staff-password" type="password" autocomplete="current-password" required></div>
-        <button type="submit" class="button button--primary">Iniciar sesion</button>
-      </form>
-      <p id="staff-status" role="status"></p>
+    <section class="panel" id="access-panel">
+      <div class="panel__header"><h2>Acceso</h2><p>Selecciona tu perfil para continuar.</p></div>
+      <div class="access-grid">
+        <form id="staff-login-form" class="access-form">
+          <h3>Equipo TI</h3>
+          <div class="field"><label for="staff-email">Correo</label><input id="staff-email" type="email" autocomplete="username" required></div>
+          <div class="field"><label for="staff-password">Contraseña</label><input id="staff-password" type="password" autocomplete="current-password" required></div>
+          <button type="submit" class="button button--primary">Iniciar sesion</button>
+          <p id="staff-status" role="status"></p>
+        </form>
+        <form id="client-login-form" class="access-form">
+          <h3>Cliente</h3>
+          <div class="field"><label for="client-code">Codigo de acceso</label><input id="client-code" required autocomplete="off"></div>
+          <button type="submit" class="button button--primary">Entrar como cliente</button>
+          <p id="client-status" role="status"></p>
+        </form>
+      </div>
     </section>
-    <section class="panel" aria-labelledby="form-title">
+    <section class="panel authenticated-only" aria-labelledby="form-title">
       <div class="panel__header">
         <h2 id="form-title">Nuevo reporte</h2>
         <p>Registra la informacion del servicio realizado.</p>
@@ -133,7 +142,7 @@
       </form>
     </section>
 
-    <section class="panel" aria-labelledby="list-title">
+    <section class="panel authenticated-only" aria-labelledby="list-title">
       <div class="panel__header panel__header--row">
         <div>
           <h2 id="list-title">Reportes registrados</h2>
@@ -149,6 +158,11 @@
       <p class="sync-status" id="sync-status" role="status" aria-live="polite"></p>
       <p class="list-status" id="list-status" role="status" aria-live="polite"></p>
       <ul class="reportes" id="reportes-list"></ul>
+      <nav class="pagination" aria-label="Paginacion de reportes">
+        <button type="button" class="button button--ghost" id="pagination-prev">Anterior</button>
+        <span id="pagination-info" aria-live="polite"></span>
+        <button type="button" class="button button--ghost" id="pagination-next">Siguiente</button>
+      </nav>
     </section>
   </main>
 
